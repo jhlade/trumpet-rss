@@ -81,11 +81,13 @@ Each status is truncated to 500 characters (Mastodon's limit) with an ellipsis.
 ## CLI
 
 ```bash
-bin/trumpet check              # validate config, print status of accounts/sources/rules
-bin/trumpet test <rule>        # dry-run a rule: print rendered statuses, no HTTP
-bin/trumpet bootstrap <rule>   # mark current feed contents as seen without posting
-bin/trumpet run                # process all due rules — intended for cron
-bin/trumpet prune [days=90]    # delete seen_items older than N days
+bin/trumpet check                       # validate config, print status of accounts/sources/rules
+bin/trumpet test <rule>                 # dry-run a rule: print rendered statuses, no HTTP
+bin/trumpet bootstrap <rule>            # mark current feed contents as seen without posting
+bin/trumpet run                         # process all due rules — intended for cron
+bin/trumpet prune [days=90]             # delete seen_items older than N days
+bin/trumpet hash-password <pw> [user]   # bcrypt a password for TRUMPET_USERS
+bin/trumpet serve [--host=H --port=P]   # start the HTTP API (built-in PHP server)
 ```
 
 Useful flags:
@@ -136,6 +138,83 @@ sqlite3 storage/trumpet.sqlite 'SELECT * FROM rule_state;'
 sqlite3 storage/trumpet.sqlite 'SELECT rule_name, COUNT(*) FROM seen_items GROUP BY rule_name;'
 ```
 
+## Container (Podman / Docker)
+
+A single image runs both the HTTP API and the cron worker under `supervisord`.
+
+```bash
+cp example.env .env
+$EDITOR .env                            # set JWT secret, users, tokens
+podman build -t trumpet-rss:dev .
+podman run --rm -d --name trumpet \
+  -p 8080:8080 \
+  --env-file .env \
+  -v "$PWD/config:/app/config:Z" \
+  -v "$PWD/storage:/app/storage:Z" \
+  trumpet-rss:dev
+podman logs -f trumpet
+```
+
+Volumes:
+
+- `/app/config` — YAML config; can be mounted read-only.
+- `/app/storage` — SQLite DB and log; persists state across restarts.
+
+Generate a bcrypt for the `TRUMPET_USERS` entry without leaving the container:
+
+```bash
+podman run --rm trumpet-rss:dev php /app/bin/trumpet hash-password mysecret admin
+# → admin:$2y$10$...
+```
+
+The cron job inside the image runs `bin/trumpet run` every 5 minutes — see
+[docker/crontab](docker/crontab). Edit it before rebuild if you need a
+different cadence.
+
+## HTTP JSON API
+
+Mounted under `/api/v1/`. Bearer JWT required except `/health` and
+`/auth/login`. All responses are JSON.
+
+| Method | Path                                | Auth | Purpose                                    |
+|--------|-------------------------------------|------|--------------------------------------------|
+| GET    | `/api/v1/health`                    | no   | Status, version, uptime                    |
+| POST   | `/api/v1/auth/login`                | no   | `{username, password}` → `{token, expires_at}` |
+| GET    | `/api/v1/config`                    | yes  | Accounts, sources, rules (no token values) |
+| GET    | `/api/v1/rules`                     | yes  | Rules + state (last_run, due, seen count)  |
+| GET    | `/api/v1/rules/{name}`              | yes  | Single rule detail                         |
+| POST   | `/api/v1/rules/{name}/run`          | yes  | Process one rule synchronously             |
+| POST   | `/api/v1/rules/{name}/test`         | yes  | Dry-run (no HTTP to Mastodon)              |
+| POST   | `/api/v1/rules/{name}/bootstrap`    | yes  | Mark current feed as seen                  |
+| POST   | `/api/v1/run`                       | yes  | Process all due rules                      |
+| POST   | `/api/v1/prune`                     | yes  | `{days?: 90}` → `{deleted: N}`             |
+| GET    | `/api/v1/state/seen?rule=X&limit=N` | yes  | Recent seen items for a rule               |
+
+Errors use a uniform shape: `{"error": {"code": "...", "message": "..."}}`.
+
+### Authentication
+
+Set in your environment (or `.env`):
+
+```dotenv
+TRUMPET_JWT_SECRET=long-random-string
+TRUMPET_JWT_TTL=28800
+TRUMPET_USERS=admin:$2y$10$bcrypt-hash[,jane:$2y$10$another-hash]
+```
+
+Get a token, then use it:
+
+```bash
+TOKEN=$(curl -fsS -X POST localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin"}' | jq -r .token)
+
+curl -fsS -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/rules | jq .
+```
+
+The token is a standard HS256 JWT — 8 h TTL by default. Rotate
+`TRUMPET_JWT_SECRET` to invalidate every issued token at once.
+
 ## Testing
 
 Tests live under `tests/` and use a tiny self-contained runner — no PHPUnit
@@ -146,13 +225,15 @@ php tests/run.php
 ```
 
 Tests cover the pure-logic units (`Yaml`, `IntervalParser`, `StatusFormatter`,
-`Config`). `FeedFetcher` and `MastodonClient` are not covered automatically
-because they hit the network.
+`Config`, `Jwt`, `Auth`, `Api\Router`). `FeedFetcher`, `MastodonClient`, and
+the live HTTP endpoints are not covered automatically because they hit the
+network or require a running server.
 
 ## Continuous Integration
 
 GitHub Actions runs `php -l` over all sources and executes the test suite on
-a PHP 8.1 → 8.4 matrix on every push and pull request — see
+a PHP 8.1 → 8.4 matrix on every push and pull request, then builds the
+container image and smoke-tests the HTTP API — see
 [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 ## License

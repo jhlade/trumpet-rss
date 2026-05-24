@@ -47,3 +47,52 @@ jobs:
         run: |
           cp config/config.example.yaml config/config.yaml
           php bin/trumpet check
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: trumpet-rss:ci
+
+      - name: Smoke test image
+        env:
+          TRUMPET_TOKEN_MYACCOUNT: dummy
+          TRUMPET_TOKEN_SECONDARY: dummy
+          TRUMPET_JWT_SECRET: ci-secret-only-used-for-the-test
+          # bcrypt of "admin"
+          TRUMPET_USERS: 'admin:$2y$12$ou7IWXt4jZAWhfVbsX2qquABXKtLlCXvo47mKqJtW/NnC0rqqoJSa'
+        run: |
+          docker run --rm -d --name trumpet-ci \
+            -p 8080:8080 \
+            -e TRUMPET_TOKEN_MYACCOUNT \
+            -e TRUMPET_TOKEN_SECONDARY \
+            -e TRUMPET_JWT_SECRET \
+            -e TRUMPET_USERS \
+            -v "$PWD/config/config.example.yaml:/app/config/config.yaml:ro" \
+            trumpet-rss:ci
+          # wait for HTTP up
+          for i in $(seq 1 20); do
+            if curl -fsS localhost:8080/api/v1/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS localhost:8080/api/v1/health
+          token=$(curl -fsS -X POST localhost:8080/api/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"admin"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+          curl -fsS -H "Authorization: Bearer $token" localhost:8080/api/v1/rules
+          docker logs trumpet-ci
+          docker stop trumpet-ci

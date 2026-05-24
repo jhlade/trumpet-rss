@@ -111,6 +111,45 @@ try {
             printf("Pruned %d seen items older than %d days\n", $deleted, $days);
             exit(0);
 
+        case 'hash-password':
+            $pw = $argv[0] ?? null;
+            $user = $argv[1] ?? null;
+            if ($pw === null) {
+                if (function_exists('readline')) {
+                    $pw = readline('Password: ');
+                } else {
+                    fwrite(STDERR, "Usage: trumpet hash-password <password> [username]\n");
+                    exit(1);
+                }
+            }
+            $hash = password_hash($pw, PASSWORD_BCRYPT);
+            if ($user !== null) {
+                printf("%s:%s\n", $user, $hash);
+            } else {
+                printf("%s\n", $hash);
+            }
+            exit(0);
+
+        case 'serve':
+            $host = '0.0.0.0';
+            $port = '8080';
+            foreach ($argv as $a) {
+                if (str_starts_with($a, '--host=')) $host = substr($a, 7);
+                if (str_starts_with($a, '--port=')) $port = substr($a, 7);
+            }
+            $public = $root . '/public';
+            $index = $public . '/index.php';
+            fwrite(STDERR, "Serving on http://$host:$port (root: $public)\n");
+            if (function_exists('pcntl_exec')) {
+                pcntl_exec(PHP_BINARY, ['-S', "$host:$port", '-t', $public, $index]);
+                fwrite(STDERR, "pcntl_exec failed\n");
+                exit(1);
+            }
+            $cmd = escapeshellarg(PHP_BINARY) . ' -S ' . escapeshellarg("$host:$port")
+                . ' -t ' . escapeshellarg($public) . ' ' . escapeshellarg($index);
+            passthru($cmd, $rc);
+            exit($rc);
+
         default:
             fwrite(STDERR, "Unknown command: $cmd\n");
             printHelp();
@@ -131,12 +170,14 @@ Usage:
   trumpet <command> [options]
 
 Commands:
-  run                     Process all due rules (the cron entrypoint).
-  check                   Validate config and print status of accounts/sources/rules.
-  test <rule>             Dry-run a single rule: print what would be posted, no HTTP.
-  bootstrap <rule>        Mark current feed items as seen without posting.
-  prune [days=90]         Delete seen_items older than N days.
-  help                    Show this help.
+  run                            Process all due rules (the cron entrypoint).
+  check                          Validate config and print status of accounts/sources/rules.
+  test <rule>                    Dry-run a single rule: print what would be posted, no HTTP.
+  bootstrap <rule>               Mark current feed items as seen without posting.
+  prune [days=90]                Delete seen_items older than N days.
+  hash-password <pw> [user]      Print bcrypt hash (or "user:hash") for TRUMPET_USERS.
+  serve [--host=H] [--port=P]    Start the PHP built-in HTTP server with the API.
+  help                           Show this help.
 
 Options:
   -v, --verbose           Verbose (DEBUG) logging.

@@ -1,0 +1,16 @@
+.git
+.gitignore
+.gitmodules
+.idea
+.github
+.dockerignore
+Dockerfile
+README.md
+LICENSE
+example.env
+.env
+tests
+storage/*.sqlite*
+storage/*.log
+*.log
+config/config.yaml

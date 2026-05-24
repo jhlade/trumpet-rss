@@ -95,4 +95,20 @@ final class State
         $s->execute([$rule]);
         return (int)$s->fetchColumn();
     }
+
+    /**
+     * @return list<array{source_name:string, item_guid:string, posted_at:int}>
+     */
+    public function recentSeen(string $rule, int $limit = 50): array
+    {
+        $s = $this->db->prepare(
+            'SELECT source_name, item_guid, posted_at
+             FROM seen_items
+             WHERE rule_name = ?
+             ORDER BY posted_at DESC
+             LIMIT ?'
+        );
+        $s->execute([$rule, $limit]);
+        return $s->fetchAll(\PDO::FETCH_ASSOC);
+    }
 }

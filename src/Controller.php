@@ -117,7 +117,7 @@ final class Controller
         foreach ($toPost as $c) {
             $status = StatusFormatter::render($rule['template'], $c['item']);
             if ($this->dryRun) {
-                fwrite(STDOUT, "--- [{$rule['name']}] <{$c['source']}> guid={$c['item']['guid']}\n$status\n");
+                echo "--- [{$rule['name']}] <{$c['source']}> guid={$c['item']['guid']}\n$status\n";
                 continue;
             }
             $res = $this->mastodon->postStatus(

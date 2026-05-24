@@ -1,0 +1,3 @@
+# Run every 5 minutes. The bot reads env from /etc/trumpet.env to inherit
+# what was passed in at container start (cron does not inherit envp from PID 1).
+*/5 * * * * /bin/sh -c '. /etc/trumpet.env 2>/dev/null; /usr/local/bin/php /app/bin/trumpet run >> /app/storage/trumpet.log 2>&1'
