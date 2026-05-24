@@ -1,0 +1,148 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+use Trumpet\Config;
+use Trumpet\Controller;
+use Trumpet\FeedFetcher;
+use Trumpet\IntervalParser;
+use Trumpet\Logger;
+use Trumpet\MastodonClient;
+use Trumpet\State;
+
+spl_autoload_register(function (string $class): void {
+    if (!str_starts_with($class, 'Trumpet\\')) return;
+    $rel = substr($class, strlen('Trumpet\\'));
+    $path = __DIR__ . '/../src/' . str_replace('\\', '/', $rel) . '.php';
+    if (is_file($path)) require $path;
+});
+
+$root = dirname(__DIR__);
+$configPath = $root . '/config/config.yaml';
+$dbPath = $root . '/storage/trumpet.sqlite';
+
+$argv = $_SERVER['argv'] ?? [];
+array_shift($argv);
+$cmd = array_shift($argv) ?? 'help';
+
+$verbose = false;
+$argv = array_values(array_filter($argv, function ($a) use (&$verbose, &$configPath) {
+    if ($a === '-v' || $a === '--verbose') { $verbose = true; return false; }
+    if (str_starts_with($a, '--config=')) { $configPath = substr($a, 9); return false; }
+    return true;
+}));
+
+$log = new Logger($verbose ? Logger::DEBUG : Logger::INFO);
+
+try {
+    switch ($cmd) {
+        case 'help':
+        case '-h':
+        case '--help':
+            printHelp();
+            exit(0);
+
+        case 'check':
+            $cfg = Config::load($configPath);
+            $state = new State($dbPath);
+            $now = time();
+            printf("Config: %s\n", $configPath);
+            printf("  Accounts: %d\n", count($cfg->accounts));
+            foreach ($cfg->accounts as $a) {
+                $tok = $cfg->tokenFor($a['name']);
+                printf("    - %s  (%s)  token[%s]: %s\n",
+                    $a['name'], $a['instance'], $a['token_env'],
+                    $tok !== null ? 'OK' : 'MISSING');
+            }
+            printf("  Sources: %d\n", count($cfg->sources));
+            foreach ($cfg->sources as $s) {
+                printf("    - %s  %s\n", $s['name'], $s['url']);
+            }
+            printf("  Rules: %d\n", count($cfg->rules));
+            foreach ($cfg->rules as $r) {
+                $last = $state->lastRunAt($r['name']);
+                $status = !$r['enabled'] ? 'DISABLED'
+                    : ($last === 0 ? 'never run (bootstrap pending)'
+                        : (($now - $last) >= $r['interval_seconds']
+                            ? 'DUE (last ' . ($now - $last) . 's ago)'
+                            : 'next in ' . ($r['interval_seconds'] - ($now - $last)) . 's'));
+                printf("    - %s → %s  every %s, max %d, vis=%s  [%s]\n",
+                    $r['name'], $r['account'], $r['interval'], $r['max_per_run'], $r['visibility'], $status);
+                printf("        sources: %s\n", implode(', ', $r['sources']));
+                printf("        seen items in DB: %d\n", $state->countSeen($r['name']));
+            }
+            exit(0);
+
+        case 'run':
+            $cfg = Config::load($configPath);
+            $state = new State($dbPath);
+            $fetcher = new FeedFetcher($log);
+            $mastodon = new MastodonClient($log);
+            $controller = new Controller($cfg, $state, $fetcher, $mastodon, $log, dryRun: false);
+            $ok = $controller->run();
+            exit($ok ? 0 : 2);
+
+        case 'test':
+            $name = $argv[0] ?? null;
+            if ($name === null) { fwrite(STDERR, "Usage: trumpet test <rule>\n"); exit(1); }
+            $cfg = Config::load($configPath);
+            $state = new State($dbPath);
+            $fetcher = new FeedFetcher($log);
+            $mastodon = new MastodonClient($log);
+            $controller = new Controller($cfg, $state, $fetcher, $mastodon, $log, dryRun: true);
+            $ok = $controller->run($name);
+            exit($ok ? 0 : 2);
+
+        case 'bootstrap':
+            $name = $argv[0] ?? null;
+            if ($name === null) { fwrite(STDERR, "Usage: trumpet bootstrap <rule>\n"); exit(1); }
+            $cfg = Config::load($configPath);
+            $state = new State($dbPath);
+            $fetcher = new FeedFetcher($log);
+            $mastodon = new MastodonClient($log);
+            $controller = new Controller($cfg, $state, $fetcher, $mastodon, $log);
+            $ok = $controller->bootstrap($name);
+            exit($ok ? 0 : 2);
+
+        case 'prune':
+            $days = isset($argv[0]) ? (int)$argv[0] : 90;
+            $state = new State($dbPath);
+            $deleted = $state->prune($days);
+            printf("Pruned %d seen items older than %d days\n", $deleted, $days);
+            exit(0);
+
+        default:
+            fwrite(STDERR, "Unknown command: $cmd\n");
+            printHelp();
+            exit(1);
+    }
+} catch (\Throwable $e) {
+    $log->error($e->getMessage());
+    if ($verbose) fwrite(STDERR, $e->getTraceAsString() . "\n");
+    exit(1);
+}
+
+function printHelp(): void
+{
+    fwrite(STDOUT, <<<TXT
+trumpet-rss — Mastodon RSS feed automator
+
+Usage:
+  trumpet <command> [options]
+
+Commands:
+  run                     Process all due rules (the cron entrypoint).
+  check                   Validate config and print status of accounts/sources/rules.
+  test <rule>             Dry-run a single rule: print what would be posted, no HTTP.
+  bootstrap <rule>        Mark current feed items as seen without posting.
+  prune [days=90]         Delete seen_items older than N days.
+  help                    Show this help.
+
+Options:
+  -v, --verbose           Verbose (DEBUG) logging.
+  --config=PATH           Use a custom config.yaml path.
+
+Tokens are read from the env var named in each account's `token_env`.
+TXT);
+    fwrite(STDOUT, "\n");
+}

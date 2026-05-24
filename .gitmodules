@@ -1,0 +1,3 @@
+[submodule "vendor/rss-php"]
+	path = vendor/rss-php
+	url = https://github.com/dg/rss-php

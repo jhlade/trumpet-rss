@@ -1,0 +1,39 @@
+# trumpet-rss — example configuration
+# Copy to config/config.yaml and edit. Tokens come from environment variables
+# named in `token_env`, never from this file.
+
+accounts:
+  - name: myaccount
+    instance: https://mastodon.social
+    token_env: TRUMPET_TOKEN_MYACCOUNT
+    default_language: en
+
+  - name: secondary
+    instance: https://example.social
+    token_env: TRUMPET_TOKEN_SECONDARY
+
+sources:
+  - name: news
+    url: https://example.com/feed.xml
+
+  - name: blog
+    url: https://example.com/blog.atom
+
+rules:
+  - name: news-to-myaccount
+    account: myaccount
+    sources: [news, blog]
+    interval: 20m          # accepted units: s, m, h, d
+    max_per_run: 3         # max number of newest items per run
+    visibility: unlisted   # public | unlisted | private | direct
+    language: en
+    template: "{title}\n{link}"
+    enabled: true
+
+  - name: blog-to-secondary
+    account: secondary
+    sources: [blog]
+    interval: 1h
+    max_per_run: 1
+    visibility: public
+    template: "New post: {title} — {link}"
