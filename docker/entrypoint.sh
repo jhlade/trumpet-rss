@@ -18,4 +18,8 @@ set -eu
 } > /etc/trumpet.env
 chmod 600 /etc/trumpet.env
 
+# Record container start time so /api/v1/health can report real uptime.
+mkdir -p /app/storage
+date +%s > /app/storage/.started_at
+
 exec "$@"

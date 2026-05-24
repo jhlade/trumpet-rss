@@ -11,6 +11,8 @@ final class Logger
     public const ERROR = 3;
 
     private int $minLevel;
+    /** @var resource|null  lazy stderr handle (built-in server SAPI does not define \STDERR) */
+    private $stderr = null;
 
     public function __construct(int $minLevel = self::INFO)
     {
@@ -27,6 +29,15 @@ final class Logger
         if ($level < $this->minLevel) return;
         $tag = ['DEBUG', 'INFO', 'WARN', 'ERROR'][$level];
         $ts = date('Y-m-d H:i:s');
-        fwrite(STDERR, "[$ts] $tag $msg\n");
+        $line = "[$ts] $tag $msg\n";
+
+        if ($this->stderr === null) {
+            $this->stderr = defined('STDERR') ? \STDERR : @fopen('php://stderr', 'w');
+        }
+        if ($this->stderr !== false && $this->stderr !== null) {
+            @fwrite($this->stderr, $line);
+        } else {
+            error_log(rtrim($line));
+        }
     }
 }

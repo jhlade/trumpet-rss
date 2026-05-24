@@ -86,3 +86,4 @@ storage/*.sqlite-shm
 storage/*.sqlite-wal
 *.log
 .env
+/storage/.started_at

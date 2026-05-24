@@ -14,8 +14,6 @@ use Trumpet\StatusFormatter;
 
 final class Handlers
 {
-    private float $startedAt;
-
     public function __construct(
         private Config $config,
         private State $state,
@@ -24,17 +22,28 @@ final class Handlers
         private MastodonClient $mastodon,
         private Logger $log,
         private string $version = '0.1.0',
-    ) {
-        $this->startedAt = microtime(true);
-    }
+        private string $startedAtFile = '/app/storage/.started_at',
+    ) {}
 
     public function health(Request $req, array $params): Response
     {
+        $now = time();
+        $startedAt = $this->readStartedAt();
+        $uptime = $startedAt > 0 ? max(0, $now - $startedAt) : null;
         return Response::json(200, [
             'status' => 'ok',
             'version' => $this->version,
-            'uptime_seconds' => (int)(microtime(true) - $this->startedAt),
+            'started_at' => $startedAt > 0 ? $startedAt : null,
+            'uptime_seconds' => $uptime,
+            'now' => $now,
         ]);
+    }
+
+    private function readStartedAt(): int
+    {
+        if (!is_file($this->startedAtFile)) return 0;
+        $raw = trim((string)@file_get_contents($this->startedAtFile));
+        return ctype_digit($raw) ? (int)$raw : 0;
     }
 
     public function login(Request $req, array $params): Response
