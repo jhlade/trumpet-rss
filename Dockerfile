@@ -5,11 +5,13 @@ RUN apk add --no-cache \
         dcron \
         supervisor \
         sqlite-libs \
+        openldap \
         tzdata \
     && apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS \
         sqlite-dev \
-    && docker-php-ext-install -j$(nproc) pdo_sqlite pcntl \
+        openldap-dev \
+    && docker-php-ext-install -j$(nproc) pdo_sqlite pcntl ldap \
     && apk del .build-deps \
     && rm -rf /tmp/* /var/cache/apk/*
 

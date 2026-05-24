@@ -37,7 +37,7 @@ $log = new Logger($logLevel);
 try {
     $config = Config::load($configPath);
     $state = new State($dbPath);
-    $auth = Auth::fromEnv();
+    $auth = Auth::fromEnv($log);
     $fetcher = new FeedFetcher($log);
     $mastodon = new MastodonClient($log);
     $handlers = new Handlers($config, $state, $auth, $fetcher, $mastodon, $log);

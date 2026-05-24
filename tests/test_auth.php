@@ -78,3 +78,57 @@ test('auth: token for user removed from TRUMPET_USERS is rejected', function () 
     $authVerify = new Auth("other:$hash", 'jwt-secret');
     assert_eq(null, $authVerify->authenticate('Bearer ' . $res['token']));
 });
+
+test('auth: local user match short-circuits LDAP (LDAP not consulted)', function () {
+    $hash = password_hash('pw', PASSWORD_BCRYPT);
+    // Stub Ldap that would explode if authenticate() got called.
+    $ldap = new class extends \Trumpet\Ldap {
+        public function __construct() {
+            parent::__construct(
+                url: 'ldap://nope', bindDn: 'cn=svc', bindPassword: '',
+                baseDn: 'dc=x', userFilter: '(uid={user})', adminGroups: ['cn=g,dc=x']
+            );
+        }
+        public function authenticate(string $u, string $p): ?string {
+            throw new \RuntimeException('LDAP should not be consulted when local matched');
+        }
+    };
+    $auth = new Auth("admin:$hash", 'jwt-secret', 28800, $ldap);
+    $res = $auth->login('admin', 'pw');
+    assert_true($res !== null);
+});
+
+test('auth: LDAP fallback when no local user matches', function () {
+    $ldap = new class extends \Trumpet\Ldap {
+        public function __construct() {
+            parent::__construct(
+                url: 'ldap://nope', bindDn: 'cn=svc', bindPassword: '',
+                baseDn: 'dc=x', userFilter: '(uid={user})', adminGroups: ['cn=g,dc=x']
+            );
+        }
+        public function authenticate(string $u, string $p): ?string {
+            return $u === 'jdoe' && $p === 'adpw' ? 'CN=jdoe,DC=x' : null;
+        }
+    };
+    $auth = new Auth('', 'jwt-secret', 28800, $ldap);
+    $res = $auth->login('jdoe', 'adpw');
+    assert_true($res !== null, 'LDAP user should log in');
+    assert_eq(null, $auth->login('jdoe', 'wrong'));
+});
+
+test('auth: with LDAP, token for user not in TRUMPET_USERS is still accepted', function () {
+    $ldap = new class extends \Trumpet\Ldap {
+        public function __construct() {
+            parent::__construct(
+                url: 'ldap://x', bindDn: 'cn=svc', bindPassword: '',
+                baseDn: 'dc=x', userFilter: '(uid={user})', adminGroups: ['cn=g,dc=x']
+            );
+        }
+        public function authenticate(string $u, string $p): ?string {
+            return $u === 'jdoe' ? 'CN=jdoe,DC=x' : null;
+        }
+    };
+    $auth = new Auth('', 'jwt-secret', 28800, $ldap);
+    $res = $auth->login('jdoe', 'whatever');
+    assert_eq('jdoe', $auth->authenticate('Bearer ' . $res['token']));
+});

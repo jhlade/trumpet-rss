@@ -141,10 +141,25 @@ sqlite3 storage/trumpet.sqlite 'SELECT rule_name, COUNT(*) FROM seen_items GROUP
 ## Container (Podman / Docker)
 
 A single image runs both the HTTP API and the cron worker under `supervisord`.
+The repo ships a [docker-compose.yml](docker-compose.yml) — both
+`docker compose` and `podman compose` work.
 
 ```bash
 cp example.env .env
 $EDITOR .env                            # set JWT secret, users, tokens
+docker compose up -d --build           # or: podman compose up -d --build
+docker compose logs -f trumpet
+```
+
+> **Note — bcrypt and compose.** `docker compose` / `podman compose` perform
+> variable interpolation on `env_file`, so each `$` in a bcrypt hash inside
+> `.env` must be doubled to `$$`. [example.env](example.env) ships in the
+> escaped form by default. If you instead use plain `podman run --env-file`,
+> halve every `$$` back to `$` in `TRUMPET_USERS`.
+
+Manual run without compose:
+
+```bash
 podman build -t trumpet-rss:dev .
 podman run --rm -d --name trumpet \
   -p 8080:8080 \
@@ -215,6 +230,42 @@ curl -fsS -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/rules | jq .
 The token is a standard HS256 JWT — 8 h TTL by default. Rotate
 `TRUMPET_JWT_SECRET` to invalidate every issued token at once.
 
+### LDAP / Active Directory (optional)
+
+When `TRUMPET_LDAP_URL` is set, the login endpoint tries `TRUMPET_USERS`
+first (an emergency local admin) and falls back to LDAP. A user
+authenticates successfully if:
+
+1. the service account bind succeeds,
+2. the user is found by the configured filter,
+3. their password binds successfully, and
+4. their `memberOf` contains at least one DN in `TRUMPET_LDAP_ADMIN_GROUPS`.
+
+Relevant env vars (see [example.env](example.env)):
+
+```dotenv
+TRUMPET_LDAP_URL=ldaps://dc1.corp.local:636
+TRUMPET_LDAP_STARTTLS=0
+TRUMPET_LDAP_TLS_VERIFY=1
+TRUMPET_LDAP_CA_FILE=                              # optional CA bundle path
+TRUMPET_LDAP_BIND_DN=CN=trumpet-svc,OU=Service Accounts,DC=corp,DC=local
+TRUMPET_LDAP_BIND_PASSWORD=...
+TRUMPET_LDAP_BASE_DN=DC=corp,DC=local
+TRUMPET_LDAP_USER_FILTER=(sAMAccountName={user})   # {user} is ldap-escaped
+TRUMPET_LDAP_ADMIN_GROUPS=CN=TrumpetAdmins,OU=Groups,DC=corp,DC=local
+```
+
+Multiple admin group DNs are separated by `;` (since DNs themselves contain
+commas). Group matching is case-insensitive on the full DN; nested groups
+are **not** resolved — flatten via a dedicated security group.
+
+Notes:
+
+- Issued tokens carry only the username; once issued, a token stays valid
+  until `TRUMPET_JWT_TTL` expires regardless of subsequent LDAP changes.
+  Rotate `TRUMPET_JWT_SECRET` for immediate invalidation.
+- Bind only; SASL/Kerberos and client-cert mTLS are out of scope.
+
 ## Testing
 
 Tests live under `tests/` and use a tiny self-contained runner — no PHPUnit
@@ -225,9 +276,9 @@ php tests/run.php
 ```
 
 Tests cover the pure-logic units (`Yaml`, `IntervalParser`, `StatusFormatter`,
-`Config`, `Jwt`, `Auth`, `Api\Router`). `FeedFetcher`, `MastodonClient`, and
-the live HTTP endpoints are not covered automatically because they hit the
-network or require a running server.
+`Config`, `Jwt`, `Auth`, `Ldap` helpers, `Api\Router`). `FeedFetcher`,
+`MastodonClient`, live LDAP, and the live HTTP endpoints are not covered
+automatically because they hit the network or require external services.
 
 ## Continuous Integration
 
