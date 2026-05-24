@@ -33,11 +33,11 @@ final class Yaml
             if (trim($stripped) === '') {
                 continue;
             }
-            $indent = strspn($stripped, ' ');
-            if (str_contains(substr($stripped, 0, $indent), "\t")) {
+            $leading = strspn($stripped, " \t");
+            if (str_contains(substr($stripped, 0, $leading), "\t")) {
                 throw new \RuntimeException("Tabs not allowed for indentation on line " . ($i + 1));
             }
-            $out[] = ['indent' => $indent, 'text' => substr($stripped, $indent), 'lineno' => $i + 1];
+            $out[] = ['indent' => $leading, 'text' => substr($stripped, $leading), 'lineno' => $i + 1];
         }
         return $out;
     }
@@ -105,6 +105,12 @@ final class Yaml
                 $i++;
                 [$child, $i] = self::parseBlock($lines, $i, $indent + 1);
                 $out[] = $child;
+                continue;
+            }
+            // "- {…}" or "- […]" → flow scalar/collection
+            if ($rest !== '' && ($rest[0] === '{' || $rest[0] === '[' || $rest[0] === '"' || $rest[0] === "'")) {
+                $out[] = self::parseScalar($rest);
+                $i++;
                 continue;
             }
             // "- key: value"  → first key of a mapping that may continue on next lines

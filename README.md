@@ -136,6 +136,25 @@ sqlite3 storage/trumpet.sqlite 'SELECT * FROM rule_state;'
 sqlite3 storage/trumpet.sqlite 'SELECT rule_name, COUNT(*) FROM seen_items GROUP BY rule_name;'
 ```
 
+## Testing
+
+Tests live under `tests/` and use a tiny self-contained runner — no PHPUnit
+or Composer involved. Run the suite locally with:
+
+```bash
+php tests/run.php
+```
+
+Tests cover the pure-logic units (`Yaml`, `IntervalParser`, `StatusFormatter`,
+`Config`). `FeedFetcher` and `MastodonClient` are not covered automatically
+because they hit the network.
+
+## Continuous Integration
+
+GitHub Actions runs `php -l` over all sources and executes the test suite on
+a PHP 8.1 → 8.4 matrix on every push and pull request — see
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
+
 ## License
 
 GNU GPL v3 — see [LICENSE](LICENSE).
