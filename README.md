@@ -26,7 +26,7 @@ too (see [Development without the container](#development-without-the-container)
 
 - **Container deployment** (recommended): Podman or Docker with a Compose
   v2-compatible CLI (`podman compose` / `docker compose`).
-- **Bare-metal / dev**: PHP 8.1+ with extensions `pdo_sqlite`, `curl`,
+- **Bare-metal / dev**: PHP 8.2+ with extensions `pdo_sqlite`, `curl`,
   `simplexml`, `mbstring` (optional but recommended), and `ldap` if you want
   LDAP auth. `git` to fetch the submodule.
 
@@ -313,7 +313,7 @@ flooding the timeline when a new rule is added.
 ## Development without the container
 
 For development you can run the same code directly on the host. You need
-PHP 8.1+ with the extensions listed in [Requirements](#requirements).
+PHP 8.2+ with the extensions listed in [Requirements](#requirements).
 
 ```bash
 git submodule update --init --recursive
@@ -355,7 +355,7 @@ automatically because they hit the network or require external services.
 ## Continuous Integration
 
 GitHub Actions runs `php -l` over all sources and executes the test suite on
-a PHP 8.1 → 8.4 matrix on every push and pull request, then builds the
+a PHP 8.2 → 8.6 matrix on every push and pull request, then builds the
 container image and smoke-tests the HTTP API — see
 [.github/workflows/ci.yml](.github/workflows/ci.yml).
 

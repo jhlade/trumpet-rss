@@ -1,4 +1,4 @@
-FROM php:8.4-cli-alpine
+FROM php:8.5-cli-alpine
 
 # OS packages: dcron + supervisor; sqlite-libs is needed by pdo_sqlite at runtime.
 RUN apk add --no-cache \
@@ -15,7 +15,7 @@ RUN apk add --no-cache \
     && apk del .build-deps \
     && rm -rf /tmp/* /var/cache/apk/*
 
-# Tweak PHP for CLI/server use: keep timezone via env, disable opcache for CLI
+# Tweak PHP for CLI/server use: timezone from env, hide X-Powered-By
 RUN { \
         echo 'date.timezone = ${TZ}'; \
         echo 'expose_php = Off'; \
