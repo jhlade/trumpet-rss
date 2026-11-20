@@ -37,12 +37,9 @@ final class MastodonClient
         ]);
         $body = curl_exec($ch);
         if ($body === false) {
-            $err = curl_error($ch);
-            curl_close($ch);
-            return ['ok' => false, 'http' => 0, 'body' => null, 'error' => $err];
+            return ['ok' => false, 'http' => 0, 'body' => null, 'error' => curl_error($ch)];
         }
         $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         $decoded = json_decode((string)$body, true);
         $ok = $http >= 200 && $http < 300;
