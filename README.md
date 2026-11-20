@@ -75,6 +75,15 @@ curl -fsS -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/rules | jq
 needed after editing rules. `.env` changes require `docker compose up -d` to
 take effect.
 
+### Host port and per-host overrides
+
+The API listens on 8080 inside the container; the host port comes from
+`TRUMPET_HTTP_PORT` in `.env` (default `8080`). Other host-specific tweaks
+(`restart`, `network_mode`, `dns`, …) belong in `docker-compose.override.yml`
+next to the main file — compose merges it automatically and git ignores it,
+so `git pull` never conflicts. With `network_mode: host` port publishing is
+ignored and the API is reachable directly on the host's port 8080.
+
 ### Manual `podman run` (no compose)
 
 ```bash
@@ -151,6 +160,7 @@ TRUMPET_USERS=admin:$$2y$$10$$bcrypt-hash      # use $$ inside compose env_file
 #TRUMPET_LDAP_URL=ldaps://dc1.corp.local:636
 #... (see LDAP section below)
 
+TRUMPET_HTTP_PORT=8080        # host port published by compose
 TRUMPET_LOG_LEVEL=info
 TZ=Europe/Prague
 ```
